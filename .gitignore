@@ -1,0 +1,13 @@
+# Environment files
+.env
+.env.*
+
+# Go build output
+/bin/
+/tmp/
+*.exe
+*.out
+*.log
+
+# OS files
+.DS_Store
