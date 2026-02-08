@@ -32,7 +32,23 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		}
 
 		claims := token.Claims.(jwt.MapClaims)
-		c.Set("user_id", claims["user_id"])
+
+		// SAFE PARSING
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token payload"})
+			c.Abort()
+			return
+		}
+
+		role, ok := claims["role"].(string)
+		if !ok {
+			// DEFAULT role
+			role = "member"
+		}
+
+		c.Set("user_id", int(userIDFloat))
+		c.Set("role", role)
 
 		c.Next()
 	}

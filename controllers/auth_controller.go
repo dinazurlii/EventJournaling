@@ -86,14 +86,15 @@ func Login(c *gin.Context) {
 		ID       int
 		Email    string
 		Password string
+		Role     string
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `SELECT id, email, password FROM users WHERE email=$1`
+	query := `SELECT id, email, password, role FROM users WHERE email=$1`
 	err := config.DB.QueryRow(ctx, query, input.Email).
-		Scan(&user.ID, &user.Email, &user.Password)
+		Scan(&user.ID, &user.Email, &user.Password, &user.Role)
 
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -115,6 +116,7 @@ func Login(c *gin.Context) {
 	claims := jwt.MapClaims{
 		"user_id": user.ID,
 		"email":   user.Email,
+		"role":    user.Role,
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 	}
 

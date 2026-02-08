@@ -9,6 +9,7 @@ import (
 
 func SetupRoutes(r *gin.Engine) {
 	api := r.Group("/api")
+
 	{
 		api.POST("/register", controllers.Register)
 		api.POST("/login", controllers.Login)
@@ -19,22 +20,23 @@ func SetupRoutes(r *gin.Engine) {
 		api.DELETE("/bookmarks/:journal_id", middleware.JWTAuthMiddleware(), controllers.UnbookmarkJournal)
 		api.GET("/bookmarks", middleware.JWTAuthMiddleware(), controllers.GetMyBookmarks)
 
-		// EVENTS ROUTES
+		// LEGACY EVENTS (USER / MARKER ONLY)
 		api.POST("/events", middleware.JWTAuthMiddleware(), controllers.CreateEvent)
 		api.GET("/events", middleware.JWTAuthMiddleware(), controllers.GetMyEvents)
-		api.GET("/events/:id", controllers.GetEventDetail)
-		api.GET("/events/all", controllers.GetEvents)
 
-		// JOURNAL ROUTES
+		// ⬇️ HARUS DI ATAS :id
+		api.GET("/events/all", controllers.GetEvents)
+		api.GET("/events/:id/journals", controllers.GetEventJournals)
+
+		// ⬇️ PALING BAWAH
+		api.GET("/events/:id", controllers.GetEventDetail)
+
 		api.POST("/journals", middleware.JWTAuthMiddleware(), controllers.CreateJournal)
 		api.GET("/journals", middleware.JWTAuthMiddleware(), controllers.GetMyJournals)
 		api.GET("/journals/public", controllers.GetPublicJournals)
 
 		// MAP ROUTES
 		api.GET("/map/journals", controllers.GetMapJournals)
-
-		// EVENT JOURNALS ROUTES
-		api.GET("/events/:id/journals", controllers.GetEventJournals)
 
 		// JOURNAL LIKES ROUTES
 		api.POST("/journals/:id/like",
@@ -61,9 +63,27 @@ func SetupRoutes(r *gin.Engine) {
 		//BOOKMARK ROUTES
 		api.GET("/journals/:id", middleware.OptionalJWT(), controllers.GetJournalDetail)
 
-		// CREATOR ROUTES
-		api.POST("/organizer/events", middleware.JWTAuthMiddleware(), controllers.CreateOrganizerEvent)
-		api.GET("/organizer/events/:id", controllers.GetOrganizerEventDetail)
-		api.GET("/organizer/events", controllers.SearchOrganizerEvents)
+		// ORGANIZER EVENTS (PUBLIC ACTIVITIES)
+		api.POST("/organizer/events",
+			middleware.JWTAuthMiddleware(),
+			controllers.CreateOrganizerEvent,
+		)
+
+		api.GET("/organizer/events",
+			controllers.SearchOrganizerEvents,
+		)
+
+		api.GET("/organizer/events/:id",
+			controllers.GetOrganizerEventDetail,
+		)
+		// ADMIN ROUTES
+		admin := api.Group("/admin")
+		admin.Use(middleware.JWTAuthMiddleware(), middleware.AdminOnly())
+		{
+			admin.GET("/events/pending", controllers.GetPendingEvents)
+			admin.PUT("/events/:id/approve", controllers.ApproveEvent)
+			admin.PUT("/events/:id/reject", controllers.RejectEvent)
+		}
 	}
+
 }

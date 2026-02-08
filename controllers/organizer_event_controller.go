@@ -32,25 +32,21 @@ func CreateOrganizerEvent(c *gin.Context) {
 		return
 	}
 
-	// RULE: organizer event
-	// - start_date & end_date wajib
-	// - selalu public
-	// - event_type = organizer (DI CODE)
-
 	query := `
-		INSERT INTO events (
-			title,
-			description,
-			event_date,
-			latitude,
-			longitude,
-			location_name,
-			created_by
-		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-		RETURNING id
-	`
-
+    INSERT INTO events (
+        title, description, start_date, end_date,
+        latitude, longitude, location_name,
+        is_paid, event_type,
+        status, created_by
+    )
+    VALUES (
+        $1,$2,$3,$4,
+        $5,$6,$7,
+        $8,'organizer',
+        'pending',
+        $9)
+    RETURNING id
+`
 	var eventID int
 
 	err := config.DB.QueryRow(
@@ -58,10 +54,12 @@ func CreateOrganizerEvent(c *gin.Context) {
 		query,
 		req.Title,
 		req.Description,
-		req.StartDate, // event_date = start_date
+		req.StartDate,
+		req.EndDate,
 		req.Latitude,
 		req.Longitude,
 		req.LocationName,
+		req.IsPaid,
 		userID,
 	).Scan(&eventID)
 
@@ -152,18 +150,21 @@ func SearchOrganizerEvents(c *gin.Context) {
 	end := c.Query("end_date")
 
 	query := `
-		SELECT
-			id,
-			title,
-			event_date,
-			latitude,
-			longitude,
-			location_name
-		FROM events
-		WHERE event_date >= $1
-		  AND event_date <= $2
-		ORDER BY event_date ASC
-	`
+        SELECT
+            id,
+            title,
+            start_date,
+            end_date,
+            latitude,
+            longitude,
+            location_name
+        FROM events
+        WHERE event_type = 'organizer'
+        AND status = 'published'
+        AND start_date >= $1
+        AND end_date <= $2
+        ORDER BY start_date ASC
+    `
 
 	rows, err := config.DB.Query(
 		context.Background(),
@@ -184,20 +185,24 @@ func SearchOrganizerEvents(c *gin.Context) {
 		var (
 			id           int
 			title        string
-			eventDate    time.Time
+			startDate    time.Time
+			endDate      time.Time
 			latitude     float64
 			longitude    float64
 			locationName string
 		)
 
-		if err := rows.Scan(
+		err := rows.Scan(
 			&id,
 			&title,
-			&eventDate,
+			&startDate,
+			&endDate,
 			&latitude,
 			&longitude,
 			&locationName,
-		); err != nil {
+		)
+
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -205,8 +210,8 @@ func SearchOrganizerEvents(c *gin.Context) {
 		results = append(results, gin.H{
 			"id":            id,
 			"title":         title,
-			"start_date":    eventDate,
-			"end_date":      nil,
+			"start_date":    startDate,
+			"end_date":      endDate,
 			"latitude":      latitude,
 			"longitude":     longitude,
 			"location_name": locationName,
@@ -214,6 +219,11 @@ func SearchOrganizerEvents(c *gin.Context) {
 			"event_type":    "organizer",
 			"is_public":     true,
 		})
+	}
+
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
