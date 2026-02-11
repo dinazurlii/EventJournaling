@@ -4,12 +4,14 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 
 	"event-journal-backend/config"
 	"event-journal-backend/routes"
 )
 
 func main() {
+	godotenv.Load()
 	config.ConnectDB()
 
 	r := gin.Default()

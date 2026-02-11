@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"strconv"   
+	"strconv"
 	"time"
 
 	"event-journal-backend/config"
-	"event-journal-backend/services" 
+	"event-journal-backend/services"
 
 	"github.com/gin-gonic/gin"
 )
-
 
 // ===== HELPER =====
 
@@ -140,12 +139,11 @@ func ApproveEvent(c *gin.Context) {
 
 	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
 	if err == nil {
-		go services.SendEventApproved(email, title)
+		services.SendEventApproved(email, title)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event approved"})
 }
-
 
 // ===== REJECT EVENT =====
 
@@ -199,9 +197,8 @@ func RejectEvent(c *gin.Context) {
 
 	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
 	if err == nil {
-	go services.SendEventRejected(email, title, input.Reason)
-}
-
+		services.SendEventRejected(email, title, input.Reason)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event rejected"})
 }
@@ -281,5 +278,3 @@ func GetEventModerationLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
-
-

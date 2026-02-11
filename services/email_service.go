@@ -2,6 +2,7 @@ package services
 
 import (
 	"crypto/tls"
+	"log"
 	"net/smtp"
 	"os"
 )
@@ -74,10 +75,14 @@ func SendEventApproved(to string, title string) {
 	body := `
 		<h2>Event Approved</h2>
 		<p>Your event <strong>` + title + `</strong> has been approved by admin.</p>
-		<p>It is now publicly visible.</p>
 	`
 
-	_ = SendEmail(to, subject, body)
+	err := SendEmail(to, subject, body)
+	if err != nil {
+		log.Println("EMAIL FAILED:", err)
+	} else {
+		log.Println("EMAIL SUCCESS TO:", to)
+	}
 }
 
 func SendEventRejected(to string, title string, reason string) {
@@ -89,6 +94,10 @@ func SendEventRejected(to string, title string, reason string) {
 		<p><strong>Reason:</strong> ` + reason + `</p>
 		<p>Please revise and resubmit.</p>
 	`
-
-	_ = SendEmail(to, subject, body)
+	err := SendEmail(to, subject, body)
+	if err != nil {
+		log.Println("EMAIL FAILED:", err)
+	} else {
+		log.Println("EMAIL SUCCESS TO:", to)
+	}
 }
