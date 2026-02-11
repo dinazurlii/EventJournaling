@@ -70,34 +70,37 @@ func SendEmail(to, subject, body string) error {
 }
 
 func SendEventApproved(to string, title string) {
-	subject := "Your event has been approved 🎉"
+	data := map[string]any{
+		"Title":    title,
+		"EventURL": "http://localhost:3000/events", // ganti nanti
+	}
 
-	body := `
-		<h2>Event Approved</h2>
-		<p>Your event <strong>` + title + `</strong> has been approved by admin.</p>
-	`
+	body, err := RenderEmailTemplate("approved.html", data)
+	if err != nil {
+		log.Println("TEMPLATE ERROR:", err)
+		return
+	}
 
-	err := SendEmail(to, subject, body)
+	err = SendEmail(to, "Your event has been approved 🎉", body)
 	if err != nil {
 		log.Println("EMAIL FAILED:", err)
-	} else {
-		log.Println("EMAIL SUCCESS TO:", to)
 	}
 }
 
 func SendEventRejected(to string, title string, reason string) {
-	subject := "Your event has been rejected ❌"
+	data := map[string]any{
+		"Title":  title,
+		"Reason": reason,
+	}
 
-	body := `
-		<h2>Event Rejected</h2>
-		<p>Your event <strong>` + title + `</strong> was rejected.</p>
-		<p><strong>Reason:</strong> ` + reason + `</p>
-		<p>Please revise and resubmit.</p>
-	`
-	err := SendEmail(to, subject, body)
+	body, err := RenderEmailTemplate("rejected.html", data)
+	if err != nil {
+		log.Println("TEMPLATE ERROR:", err)
+		return
+	}
+
+	err = SendEmail(to, "Your event has been rejected ❌", body)
 	if err != nil {
 		log.Println("EMAIL FAILED:", err)
-	} else {
-		log.Println("EMAIL SUCCESS TO:", to)
 	}
 }
