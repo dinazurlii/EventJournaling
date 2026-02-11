@@ -3,18 +3,19 @@ package controllers
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net/http"
+	"strconv"   
 	"time"
 
 	"event-journal-backend/config"
-	"event-journal-backend/services"
+	"event-journal-backend/services" 
 
 	"github.com/gin-gonic/gin"
 )
 
-//
+
 // ===== HELPER =====
-//
 
 func getEventTitleAndEmail(ctx context.Context, eventID string) (string, string, error) {
 	var title, email string
@@ -30,9 +31,7 @@ func getEventTitleAndEmail(ctx context.Context, eventID string) (string, string,
 	return title, email, err
 }
 
-//
 // ===== GET PENDING EVENTS =====
-//
 
 func GetPendingEvents(c *gin.Context) {
 	if c.GetString("role") != "admin" {
@@ -108,84 +107,68 @@ func GetPendingEvents(c *gin.Context) {
 //
 
 func ApproveEvent(c *gin.Context) {
-	if c.GetString("role") != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin only"})
-		return
-	}
-
-	eventID := c.Param("id")
+	eventID, _ := strconv.Atoi(c.Param("id"))
+	adminID := c.GetInt("user_id")
 
 	query := `
-	UPDATE events
-	SET status = 'approved'
-	WHERE id = $1 AND status = 'pending'
+		UPDATE event_journal.events
+		SET status = 'approved',
+		    rejection_reason = NULL,
+		    rejected_at = NULL
+		WHERE id = $1 AND status = 'pending'
 	`
 
 	result, err := config.DB.Exec(context.Background(), query, eventID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve event"})
 		return
 	}
 
-	if result.RowsAffected() == 0 {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "event not found or already processed",
-		})
+	rows := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "event not found or already processed"})
 		return
 	}
 
-	// ✉️ SEND EMAIL (TEMPLATE)
-	title, email, err := getEventTitleAndEmail(context.Background(), eventID)
+	CreateModerationLog(
+		context.Background(),
+		eventID,
+		adminID,
+		"approved",
+		nil,
+	)
+
+	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
 	if err == nil {
-		body, err := services.RenderEmailTemplate(
-			"event_approved.html",
-			gin.H{
-				"Title": title,
-			},
-		)
-
-		if err == nil {
-			go services.SendEmail(
-				email,
-				"🎉 Event kamu disetujui",
-				body,
-			)
-		}
+		go services.SendEventApproved(email, title)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event approved"})
 }
 
-//
+
 // ===== REJECT EVENT =====
-//
 
 type RejectEventInput struct {
 	Reason string `json:"reason"`
 }
 
 func RejectEvent(c *gin.Context) {
-	if c.GetString("role") != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin only"})
-		return
-	}
-
-	eventID := c.Param("id")
+	eventID, _ := strconv.Atoi(c.Param("id"))
+	adminID := c.GetInt("user_id")
 
 	var input RejectEventInput
-	if err := c.ShouldBindJSON(&input); err != nil || input.Reason == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "rejection reason is required",
-		})
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rejection reason required"})
 		return
 	}
 
 	query := `
-	UPDATE events
-	SET status = 'rejected',
-		rejection_reason = $2,
-		rejected_at = NOW()
-	WHERE id = $1 AND status = 'pending'
+		UPDATE event_journal.events
+		SET status = 'rejected',
+		    rejection_reason = $2,
+		    rejected_at = NOW()
+		WHERE id = $1 AND status = 'pending'
 	`
 
 	result, err := config.DB.Exec(
@@ -195,36 +178,108 @@ func RejectEvent(c *gin.Context) {
 		input.Reason,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject event"})
 		return
 	}
 
-	if result.RowsAffected() == 0 {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "event not found or already processed",
-		})
+	rows := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "event not found or already processed"})
 		return
 	}
 
-	// ✉️ SEND EMAIL (TEMPLATE)
-	title, email, err := getEventTitleAndEmail(context.Background(), eventID)
+	//  INSERT LOG
+	CreateModerationLog(
+		context.Background(),
+		eventID,
+		adminID,
+		"rejected",
+		&input.Reason,
+	)
+
+	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
 	if err == nil {
-		body, err := services.RenderEmailTemplate(
-			"event_rejected.html",
-			gin.H{
-				"Title":  title,
-				"Reason": input.Reason,
-			},
-		)
+	go services.SendEventRejected(email, title, input.Reason)
+}
 
-		if err == nil {
-			go services.SendEmail(
-				email,
-				"❌ Event kamu ditolak",
-				body,
-			)
-		}
-	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event rejected"})
 }
+
+func CreateModerationLog(
+	ctx context.Context,
+	eventID int,
+	adminID int,
+	action string,
+	reason *string,
+) {
+
+	query := `
+		INSERT INTO event_journal.event_moderation_logs
+			(event_id, admin_id, action, reason)
+		VALUES ($1, $2, $3, $4)
+	`
+
+	_, err := config.DB.Exec(
+		ctx,
+		query,
+		eventID,
+		adminID,
+		action,
+		reason,
+	)
+
+	if err != nil {
+		log.Println("FAILED TO INSERT MODERATION LOG:", err)
+	}
+}
+
+func GetEventModerationLogs(c *gin.Context) {
+	eventID := c.Param("id")
+
+	query := `
+		SELECT
+			l.action,
+			l.reason,
+			l.created_at,
+			u.email
+		FROM event_journal.event_moderation_logs l
+		JOIN event_journal.users u ON u.id = l.admin_id
+		WHERE l.event_id = $1
+		ORDER BY l.created_at DESC
+	`
+
+	rows, err := config.DB.Query(context.Background(), query, eventID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch logs"})
+		return
+	}
+	defer rows.Close()
+
+	var logs []gin.H
+
+	for rows.Next() {
+		var action string
+		var reason sql.NullString
+		var createdAt time.Time
+		var adminEmail string
+
+		rows.Scan(&action, &reason, &createdAt, &adminEmail)
+
+		log := gin.H{
+			"action": action,
+			"admin":  adminEmail,
+			"time":   createdAt,
+		}
+
+		if reason.Valid {
+			log["reason"] = reason.String
+		}
+
+		logs = append(logs, log)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
+

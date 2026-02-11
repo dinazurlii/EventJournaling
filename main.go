@@ -14,10 +14,7 @@ func main() {
 
 	r := gin.Default()
 
-	// static files
 	r.Static("/uploads", "./uploads")
-
-	// routes API
 	routes.SetupRoutes(r)
 
 	log.Fatal(r.Run(":8080"))
