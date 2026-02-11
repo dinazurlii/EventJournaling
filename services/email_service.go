@@ -1,10 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"crypto/tls"
+	"html/template"
 	"log"
 	"net/smtp"
 	"os"
+	"strconv"
 )
 
 func SendEmail(to, subject, body string) error {
@@ -69,38 +72,57 @@ func SendEmail(to, subject, body string) error {
 	return client.Quit()
 }
 
-func SendEventApproved(to string, title string) {
+func SendEventApproved(toEmail string, title string, eventID int) error {
+	log.Println("Sending approved email to:", toEmail)
+
+	t, err := template.ParseFiles("templates/emails/approved.html")
+	if err != nil {
+		log.Println("Template error:", err)
+		return err
+	}
+
+	var body bytes.Buffer
+
 	data := map[string]any{
 		"Title":    title,
-		"EventURL": "http://localhost:3000/events", // ganti nanti
+		"EventURL": os.Getenv("FRONTEND_URL") + "/events/" + strconv.Itoa(eventID),
 	}
 
-	body, err := RenderEmailTemplate("approved.html", data)
+	err = t.Execute(&body, data)
 	if err != nil {
-		log.Println("TEMPLATE ERROR:", err)
-		return
+		log.Println("Execute template error:", err)
+		return err
 	}
 
-	err = SendEmail(to, "Your event has been approved 🎉", body)
+	err = SendEmail(toEmail, "Your Event Was Approved 🎉", body.String())
 	if err != nil {
-		log.Println("EMAIL FAILED:", err)
+		log.Println("Send mail error:", err)
+		return err
 	}
+
+	log.Println("Email sent successfully!")
+	return nil
 }
 
-func SendEventRejected(to string, title string, reason string) {
+func SendEventRejected(toEmail string, title string, reason string, eventID int) error {
+
+	t, err := template.ParseFiles("templates/emails/rejected.html")
+	if err != nil {
+		return err
+	}
+
+	var body bytes.Buffer
+
 	data := map[string]any{
-		"Title":  title,
-		"Reason": reason,
+		"Title":    title,
+		"Reason":   reason,
+		"EventURL": os.Getenv("FRONTEND_URL") + "/events/" + strconv.Itoa(eventID),
 	}
 
-	body, err := RenderEmailTemplate("rejected.html", data)
+	err = t.Execute(&body, data)
 	if err != nil {
-		log.Println("TEMPLATE ERROR:", err)
-		return
+		return err
 	}
 
-	err = SendEmail(to, "Your event has been rejected ❌", body)
-	if err != nil {
-		log.Println("EMAIL FAILED:", err)
-	}
+	return SendEmail(toEmail, "Your Event Was Rejected ❌", body.String())
 }

@@ -139,7 +139,7 @@ func ApproveEvent(c *gin.Context) {
 
 	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
 	if err == nil {
-		go services.SendEventApproved(email, title)
+		go services.SendEventApproved(email, title, eventID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event approved"})
@@ -197,7 +197,7 @@ func RejectEvent(c *gin.Context) {
 
 	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
 	if err == nil {
-		go services.SendEventRejected(email, title, input.Reason)
+		go services.SendEventRejected(email, title, input.Reason, eventID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event rejected"})

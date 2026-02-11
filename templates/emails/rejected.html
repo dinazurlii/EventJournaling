@@ -2,45 +2,66 @@
 <html>
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Event Rejected</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
 
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+<body style="margin:0;padding:0;background-color:#f2f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;">
     <tr>
       <td align="center">
-        
+
         <table width="600" cellpadding="0" cellspacing="0" 
-          style="background:#ffffff;border-radius:12px;padding:40px;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
-          
+          style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);">
+
+          <!-- HEADER -->
           <tr>
-            <td align="center" style="padding-bottom:20px;">
-              <h2 style="color:#ef4444;margin:0;">❌ Event Rejected</h2>
+            <td align="center" style="background:#111827;padding:24px;">
+              <h1 style="color:#ffffff;margin:0;font-size:20px;">
+                Event Journal
+              </h1>
             </td>
           </tr>
 
+          <!-- CONTENT -->
           <tr>
-            <td style="color:#444;font-size:16px;line-height:24px;">
-              <p>Hi there,</p>
+            <td style="padding:40px 32px;color:#374151;font-size:16px;line-height:26px;">
+
+              <h2 style="color:#dc2626;margin-top:0;">
+                ❌ Your Event Was Rejected
+              </h2>
 
               <p>
-                Your event <strong>{{.Title}}</strong> was rejected.
+                Unfortunately, your event 
+                <strong>{{.Title}}</strong> 
+                did not pass our moderation review.
               </p>
 
               <p>
-                <strong>Reason:</strong><br/>
-                <span style="color:#ef4444;">{{.Reason}}</span>
+                <strong>Reason:</strong>
               </p>
 
+              <div style="background:#fef2f2;
+                          border-left:4px solid #dc2626;
+                          padding:16px;
+                          border-radius:8px;
+                          margin:16px 0;">
+                {{.Reason}}
+              </div>
+
               <p>
-                Please revise your event details and submit again.
+                Please update your event details and submit again.
               </p>
+
             </td>
           </tr>
 
+          <!-- FOOTER -->
           <tr>
-            <td style="font-size:13px;color:#888;padding-top:20px;border-top:1px solid #eee;">
-              © 2026 Event Journal. All rights reserved.
+            <td align="center" style="padding:24px;font-size:13px;color:#9ca3af;background:#f9fafb;">
+              © 2026 Event Journal <br/>
+              This email was sent automatically. Please do not reply.
             </td>
           </tr>
 
