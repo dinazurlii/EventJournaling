@@ -14,23 +14,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//
 // ===== HELPER =====
+//
 
-func getEventTitleAndEmail(ctx context.Context, eventID string) (string, string, error) {
-	var title, email string
+func getEventData(ctx context.Context, eventID int) (string, string, string, int, error) {
+	var title, email, fcmToken string
+	var userID int
 
 	query := `
-	SELECT e.title, u.email
-	FROM events e
-	JOIN users u ON u.id = e.created_by
+	SELECT e.title, u.email, u.fcm_token, u.id
+	FROM event_journal.events e
+	JOIN event_journal.users u ON u.id = e.created_by
 	WHERE e.id = $1
 	`
 
-	err := config.DB.QueryRow(ctx, query, eventID).Scan(&title, &email)
-	return title, email, err
+	err := config.DB.QueryRow(ctx, query, eventID).
+		Scan(&title, &email, &fcmToken, &userID)
+
+	return title, email, fcmToken, userID, err
 }
 
+//
 // ===== GET PENDING EVENTS =====
+//
 
 func GetPendingEvents(c *gin.Context) {
 	if c.GetString("role") != "admin" {
@@ -40,13 +47,13 @@ func GetPendingEvents(c *gin.Context) {
 
 	query := `
 	SELECT
-	e.id,
-	e.title,
-	e.event_date,
-	e.location_name,
-	u.id,
-	u.email,
-	e.created_at
+		e.id,
+		e.title,
+		e.event_date,
+		e.location_name,
+		u.id,
+		u.email,
+		e.created_at
 	FROM event_journal.events e
 	JOIN event_journal.users u ON u.id = e.created_by
 	WHERE e.status = 'pending'
@@ -106,15 +113,20 @@ func GetPendingEvents(c *gin.Context) {
 //
 
 func ApproveEvent(c *gin.Context) {
-	eventID, _ := strconv.Atoi(c.Param("id"))
+	eventID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event id"})
+		return
+	}
+
 	adminID := c.GetInt("user_id")
 
 	query := `
-		UPDATE event_journal.events
-		SET status = 'approved',
-		    rejection_reason = NULL,
-		    rejected_at = NULL
-		WHERE id = $1 AND status = 'pending'
+	UPDATE event_journal.events
+	SET status = 'approved',
+	    rejection_reason = NULL,
+	    rejected_at = NULL
+	WHERE id = $1 AND status = 'pending'
 	`
 
 	result, err := config.DB.Exec(context.Background(), query, eventID)
@@ -129,30 +141,64 @@ func ApproveEvent(c *gin.Context) {
 		return
 	}
 
-	CreateModerationLog(
-		context.Background(),
-		eventID,
-		adminID,
-		"approved",
-		nil,
-	)
+	CreateModerationLog(context.Background(), eventID, adminID, "approved", nil)
 
-	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
+	// Get event data (creator info)
+	title, email, fcmToken, userID, err := getEventData(context.Background(), eventID)
 	if err == nil {
+
+		// Email
 		go services.SendEventApproved(email, title, eventID)
+
+		// Push to creator
+		if fcmToken != "" {
+			go services.SendPushToToken(
+				fcmToken,
+				"Event Approved 🎉",
+				"Your event '"+title+"' has been approved!",
+				map[string]string{
+					"type":     "event_approved",
+					"event_id": strconv.Itoa(eventID),
+				},
+			)
+		}
+
+		// Save notification history
+		go services.SaveNotification(
+			userID,
+			"Event Approved 🎉",
+			"Your event '"+title+"' has been approved!",
+		)
 	}
+
+	// Broadcast to all users
+	go services.BroadcastToAllUsers(
+		"New Event Available 🎊",
+		title,
+		map[string]string{
+			"type":     "new_event",
+			"event_id": strconv.Itoa(eventID),
+		},
+	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "event approved"})
 }
 
+//
 // ===== REJECT EVENT =====
+//
 
 type RejectEventInput struct {
 	Reason string `json:"reason"`
 }
 
 func RejectEvent(c *gin.Context) {
-	eventID, _ := strconv.Atoi(c.Param("id"))
+	eventID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event id"})
+		return
+	}
+
 	adminID := c.GetInt("user_id")
 
 	var input RejectEventInput
@@ -162,11 +208,11 @@ func RejectEvent(c *gin.Context) {
 	}
 
 	query := `
-		UPDATE event_journal.events
-		SET status = 'rejected',
-		    rejection_reason = $2,
-		    rejected_at = NOW()
-		WHERE id = $1 AND status = 'pending'
+	UPDATE event_journal.events
+	SET status = 'rejected',
+	    rejection_reason = $2,
+	    rejected_at = NOW()
+	WHERE id = $1 AND status = 'pending'
 	`
 
 	result, err := config.DB.Exec(
@@ -186,7 +232,6 @@ func RejectEvent(c *gin.Context) {
 		return
 	}
 
-	//  INSERT LOG
 	CreateModerationLog(
 		context.Background(),
 		eventID,
@@ -195,13 +240,36 @@ func RejectEvent(c *gin.Context) {
 		&input.Reason,
 	)
 
-	title, email, err := getEventTitleAndEmail(context.Background(), strconv.Itoa(eventID))
+	title, email, fcmToken, userID, err := getEventData(context.Background(), eventID)
 	if err == nil {
+
 		go services.SendEventRejected(email, title, input.Reason, eventID)
+
+		if fcmToken != "" {
+			go services.SendPushToToken(
+				fcmToken,
+				"Event Rejected ❌",
+				"Your event '"+title+"' was rejected.",
+				map[string]string{
+					"type":     "event_rejected",
+					"event_id": strconv.Itoa(eventID),
+				},
+			)
+		}
+
+		go services.SaveNotification(
+			userID,
+			"Event Rejected ❌",
+			"Your event '"+title+"' was rejected.",
+		)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "event rejected"})
 }
+
+//
+// ===== MODERATION LOG =====
+//
 
 func CreateModerationLog(
 	ctx context.Context,
@@ -212,9 +280,9 @@ func CreateModerationLog(
 ) {
 
 	query := `
-		INSERT INTO event_journal.event_moderation_logs
-			(event_id, admin_id, action, reason)
-		VALUES ($1, $2, $3, $4)
+	INSERT INTO event_journal.event_moderation_logs
+		(event_id, admin_id, action, reason)
+	VALUES ($1, $2, $3, $4)
 	`
 
 	_, err := config.DB.Exec(
@@ -235,15 +303,15 @@ func GetEventModerationLogs(c *gin.Context) {
 	eventID := c.Param("id")
 
 	query := `
-		SELECT
-			l.action,
-			l.reason,
-			l.created_at,
-			u.email
-		FROM event_journal.event_moderation_logs l
-		JOIN event_journal.users u ON u.id = l.admin_id
-		WHERE l.event_id = $1
-		ORDER BY l.created_at DESC
+	SELECT
+		l.action,
+		l.reason,
+		l.created_at,
+		u.email
+	FROM event_journal.event_moderation_logs l
+	JOIN event_journal.users u ON u.id = l.admin_id
+	WHERE l.event_id = $1
+	ORDER BY l.created_at DESC
 	`
 
 	rows, err := config.DB.Query(context.Background(), query, eventID)
@@ -263,17 +331,17 @@ func GetEventModerationLogs(c *gin.Context) {
 
 		rows.Scan(&action, &reason, &createdAt, &adminEmail)
 
-		log := gin.H{
+		logItem := gin.H{
 			"action": action,
 			"admin":  adminEmail,
 			"time":   createdAt,
 		}
 
 		if reason.Valid {
-			log["reason"] = reason.String
+			logItem["reason"] = reason.String
 		}
 
-		logs = append(logs, log)
+		logs = append(logs, logItem)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"logs": logs})

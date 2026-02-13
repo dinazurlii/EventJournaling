@@ -8,11 +8,13 @@ import (
 
 	"event-journal-backend/config"
 	"event-journal-backend/routes"
+	"event-journal-backend/services"
 )
 
 func main() {
 	godotenv.Load()
 	config.ConnectDB()
+	services.InitFirebase()
 
 	r := gin.Default()
 
